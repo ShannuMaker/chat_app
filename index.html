@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UMingle Video Chat</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
+        body { background-color: #121212; color: #ffffff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 15px; }
+        .card { background: #1e1e1e; width: 100%; max-width: 850px; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.6); padding: 20px; position: relative; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .badge { background: #0066cc; color: #fff; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
+        
+        .video-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; height: 320px; margin-bottom: 15px; }
+        .video-container { background: #000; border-radius: 8px; overflow: hidden; position: relative; display: flex; justify-content: center; align-items: center; border: 2px solid #333; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        .video-label { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.75); padding: 3px 8px; border-radius: 4px; font-size: 12px; }
+
+        .setup-box { border: 1px solid #333; padding: 12px; border-radius: 8px; margin-bottom: 15px; background: #262626; }
+        .row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        select, input[type="text"] { padding: 10px; border: 1px solid #444; border-radius: 6px; font-size: 14px; background: #333; color: white; }
+        select { flex: 1; }
+
+        .chat-window { height: 140px; border: 1px solid #333; border-radius: 8px; overflow-y: auto; padding: 10px; background: #181818; margin-bottom: 15px; display: flex; flex-direction: column; gap: 6px; }
+        .msg { padding: 6px 10px; border-radius: 6px; max-width: 85%; font-size: 13px; word-wrap: break-word; }
+        .msg.you { background-color: #0084ff; color: white; align-self: flex-end; }
+        .msg.stranger { background-color: #3a3b3c; color: #e4e6eb; align-self: flex-start; }
+        .msg.system { background-color: #332701; color: #ffd966; align-self: center; text-align: center; font-size: 11px; width: 100%; border: 1px solid #664d03; }
+
+        .controls { display: flex; gap: 8px; }
+        .controls input { flex: 1; }
+        button { background-color: #0084ff; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button:disabled { background-color: #444; color: #888; cursor: not-allowed; }
+        .btn-next { background-color: #28a745; }
+
+        .modal-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); border-radius: 12px; z-index: 10; flex-direction: column; justify-content: center; align-items: center; color: white; padding: 20px; text-align: center; }
+        .ad-box { background: #2a2a2a; border: 2px dashed #555; width: 100%; height: 140px; margin: 15px 0; border-radius: 8px; display: flex; justify-content: center; align-items: center; font-size: 16px; color: #aaa; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div class="header">
+        <h2>UMingle Video</h2>
+        <div class="badge">Meets Completed: <span id="meet-count">0</span></div>
+    </div>
+
+    <!-- Live Dual Video Stream -->
+    <div class="video-grid">
+        <div class="video-container">
+            <video id="localVideo" autoplay playsinline muted></video>
+            <div class="video-label">You</div>
+        </div>
+        <div class="video-container">
+            <video id="remoteVideo" autoplay playsinline></video>
+            <div class="video-label" id="remoteLabel">Stranger (Waiting)</div>
+        </div>
+    </div>
+
+    <!-- User Setup -->
+    <div class="setup-box">
+        <div class="row">
+            <label for="genderSelect"><strong>My Gender:</strong></label>
+            <select id="genderSelect">
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+            </select>
+        </div>
+        <div class="row" style="margin-bottom: 0;">
+            <input type="checkbox" id="ageCheck">
+            <label for="ageCheck" style="font-size: 12px;">I verify that I am 18 years or older</label>
+        </div>
+    </div>
+
+    <!-- Chat Messages -->
+    <div class="chat-window" id="chatBox"></div>
+
+    <!-- Controls -->
+    <div class="controls">
+        <input type="text" id="msgInput" placeholder="Type a message..." disabled>
+        <button id="sendBtn" onclick="sendMessage()" disabled>Send</button>
+        <button id="nextBtn" class="btn-next" onclick="handleNextClick()">Verify & Video Chat</button>
+    </div>
+
+    <!-- Ad Modal -->
+    <div class="modal-overlay" id="adModal">
+        <h3>Sponsored Advertisement</h3>
+        <div class="ad-box">[ Ad Banner Slot ]</div>
+        <button id="skipAdBtn" onclick="closeAd()" disabled>Skip Ad (5s)</button>
+    </div>
+</div>
+
+<canvas id="canvas" style="display:none;"></canvas>
+
+<script>
+    let ws = null;
+    let peerConnection = null;
+    let localStream = null;
+    let meetCount = 0;
+    let safetyInterval = null;
+
+    const rtcConfig = {
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    };
+
+    // Initialize Local Camera Feed
+    async function initWebcam() {
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            document.getElementById('localVideo').srcObject = localStream;
+        } catch (err) {
+            alert("Webcam & Microphone access are required for video chat.");
+        }
+    }
+    initWebcam();
+
+    function captureSnapshot() {
+        const video = document.getElementById('localVideo');
+        const canvas = document.getElementById('canvas');
+        canvas.width = video.videoWidth || 320;
+        canvas.height = video.videoHeight || 240;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/jpeg', 0.6);
+    }
+
+    function appendMessage(text, type) {
+        const chatBox = document.getElementById('chatBox');
+        const div = document.createElement('div');
+        div.className = `msg ${type}`;
+        div.textContent = text;
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function handleNextClick() {
+        if (!document.getElementById('ageCheck').checked) {
+            alert("Age verification checkbox is required.");
+            return;
+        }
+
+        meetCount++;
+        document.getElementById('meet-count').textContent = meetCount;
+
+        closePeerConnection();
+
+        if (meetCount > 0 && meetCount % 5 === 0) {
+            triggerAdModal();
+        } else {
+            startChatProcess();
+        }
+    }
+
+    function startChatProcess() {
+        const gender = document.getElementById('genderSelect').value;
+        const chatBox = document.getElementById('chatBox');
+        chatBox.innerHTML = '';
+
+        appendMessage("Verifying camera frame...", "system");
+
+        const snapshot = captureSnapshot();
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${location.host}/ws/chat/${gender}`);
+
+        ws.onopen = () => {
+            ws.send(JSON.stringify({ type: 'verify', image: snapshot }));
+        };
+
+        ws.onmessage = async (event) => {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'status') {
+                appendMessage(data.payload, "system");
+            } else if (data.type === 'match_start') {
+                appendMessage(`Matched with a ${data.partner_gender}! Connecting video...`, "system");
+                document.getElementById('remoteLabel').textContent = `Stranger (${data.partner_gender})`;
+                document.getElementById('msgInput').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+
+                setupWebRTC(data.role === 'initiator');
+                startSafetyMonitor();
+            } else if (data.type === 'offer') {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                ws.send(JSON.stringify({ type: 'answer', answer }));
+            } else if (data.type === 'answer') {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+            } else if (data.type === 'candidate') {
+                if (peerConnection && data.candidate) {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                }
+            } else if (data.type === 'message') {
+                appendMessage(data.payload, "stranger");
+            } else if (data.type === 'peer_disconnected') {
+                appendMessage("Stranger has disconnected.", "system");
+                closePeerConnection();
+            } else if (data.type === 'error') {
+                appendMessage(data.payload, "system");
+                alert(data.payload);
+                closePeerConnection();
+            }
+        };
+
+        ws.onclose = () => {
+            closePeerConnection();
+            document.getElementById('nextBtn').textContent = "Verify & Video Chat";
+        };
+
+        document.getElementById('nextBtn').textContent = "Next Stranger";
+    }
+
+    function setupWebRTC(isInitiator) {
+        peerConnection = new RTCPeerConnection(rtcConfig);
+
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+        });
+
+        peerConnection.ontrack = (event) => {
+            document.getElementById('remoteVideo').srcObject = event.streams[0];
+        };
+
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
+            }
+        };
+
+        if (isInitiator) {
+            peerConnection.onnegotiationneeded = async () => {
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                ws.send(JSON.stringify({ type: 'offer', offer }));
+            };
+        }
+    }
+
+    function startSafetyMonitor() {
+        if (safetyInterval) clearInterval(safetyInterval);
+        safetyInterval = setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'camera_frame', image: captureSnapshot() }));
+            }
+        }, 12000);
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('msgInput');
+        const message = input.value.trim();
+        if (message && ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'text', payload: message }));
+            appendMessage(message, "you");
+            input.value = '';
+        }
+    }
+
+    document.getElementById('msgInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    function closePeerConnection() {
+        if (safetyInterval) clearInterval(safetyInterval);
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+        if (ws) {
+            ws.close();
+            ws = null;
+        }
+        document.getElementById('remoteVideo').srcObject = null;
+        document.getElementById('remoteLabel').textContent = "Stranger (Disconnected)";
+        document.getElementById('msgInput').disabled = true;
+        document.getElementById('sendBtn').disabled = true;
+    }
+
+    function triggerAdModal() {
+        const modal = document.getElementById('adModal');
+        const skipBtn = document.getElementById('skipAdBtn');
+        modal.style.display = 'flex';
+        let adCountdown = 5;
+        skipBtn.disabled = true;
+
+        const adTimer = setInterval(() => {
+            adCountdown--;
+            if (adCountdown > 0) {
+                skipBtn.textContent = `Skip Ad (${adCountdown}s)`;
+            } else {
+                clearInterval(adTimer);
+                skipBtn.textContent = "Continue to Next Chat";
+                skipBtn.disabled = false;
+            }
+        }, 1000);
+    }
+
+    function closeAd() {
+        document.getElementById('adModal').style.display = 'none';
+        startChatProcess();
+    }
+</script>
+</body>
+</html>
