@@ -150,7 +150,6 @@ async def websocket_chat(websocket: WebSocket, gender: str):
         init_data = await websocket.receive_json()
         if init_data.get("type") == "verify":
             
-            # Policy Acceptance Enforcement
             if not init_data.get("policy_accepted"):
                 await websocket.send_json({"type": "error", "payload": "❌ Verification Failed: You must accept the policies to use this service."})
                 await websocket.close()
@@ -262,6 +261,8 @@ async def websocket_chat(websocket: WebSocket, gender: str):
 
             elif msg_type == "camera_frame":
                 img = decode_base64_image(data.get("image", ""))
+                
+                # Check 1: Nudity
                 if detect_image_violation(img):
                     banned_users.add(client_ip)
                     await websocket.send_json({"type": "error", "payload": "⛔ Banned for video safety violations."})
@@ -272,6 +273,31 @@ async def websocket_chat(websocket: WebSocket, gender: str):
                             await client.close()
                     await websocket.close()
                     break
+
+                # Check 2: Mid-Call Scam / Gender Swap Detection
+                face_found, current_gender, is_kid = detect_attributes(img)
+                if face_found:
+                    if current_gender != user_gender:
+                        banned_users.add(client_ip)
+                        await websocket.send_json({"type": "error", "payload": "⛔ Banned: Gender mismatch detected mid-call (Scam Attempt)."})
+                        for client in active_rooms[current_room]:
+                            if client != websocket:
+                                await client.send_json({"type": "system", "payload": "Stranger was banned for deceptive behavior (Scam)."})
+                                await client.send_json({"type": "peer_disconnected"})
+                                await client.close()
+                        await websocket.close()
+                        break
+                    
+                    if is_kid:
+                        banned_users.add(client_ip)
+                        await websocket.send_json({"type": "error", "payload": "⛔ Banned: Minors are strictly prohibited."})
+                        for client in active_rooms[current_room]:
+                            if client != websocket:
+                                await client.send_json({"type": "system", "payload": "Stranger was banned for safety violations."})
+                                await client.send_json({"type": "peer_disconnected"})
+                                await client.close()
+                        await websocket.close()
+                        break
 
     except WebSocketDisconnect:
         if websocket in waiting_males:

@@ -20,16 +20,6 @@
         video { width: 100%; height: 100%; object-fit: cover; }
         .video-label { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.75); padding: 3px 8px; border-radius: 4px; font-size: 12px; }
 
-        /* Security Feature: Full Screen Blur Overlay */
-        .security-overlay {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(18, 18, 18, 0.95);
-            backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px);
-            z-index: 99999; flex-direction: column; justify-content: center; align-items: center;
-            color: #ff4d4d; text-align: center; padding: 20px;
-        }
-        .security-overlay.active { display: flex; }
-
         .setup-box { border: 1px solid #333; padding: 12px; border-radius: 8px; margin-bottom: 15px; background: #262626; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
         .row { display: flex; align-items: center; gap: 10px; }
         select, input[type="text"], input[type="number"] { padding: 8px; border: 1px solid #444; border-radius: 6px; font-size: 14px; background: #333; color: white; }
@@ -54,12 +44,6 @@
     </style>
 </head>
 <body>
-
-<!-- Full Screen Privacy Blur -->
-<div id="securityOverlay" class="security-overlay">
-    <h2>Privacy Protection Active</h2>
-    <p>Screenshots, screen recording, and backgrounding are strictly prohibited.</p>
-</div>
 
 <div class="card">
     <div class="header">
@@ -138,22 +122,37 @@
 <canvas id="canvas" style="display:none;"></canvas>
 
 <script>
-    // --- FULL SCREEN BLUR SECURITY PROTOCOLS --- //
-    const secOverlay = document.getElementById('securityOverlay');
+    let ws = null;
+    let peerConnection = null;
+    let localStream = null;
+    let meetCount = 0;
+    let safetyInterval = null;
+    let captchaExpected = 0;
 
+    // --- IMMEDIATE TERMINATION SECURITY PROTOCOLS --- //
     // Disable Right-Click context menu
     document.addEventListener('contextmenu', event => event.preventDefault());
 
-    // Cover the entire screen when the window loses focus (OS clipping tool, mobile app switcher)
-    window.addEventListener('blur', () => {
-        secOverlay.classList.add('active');
-    });
-    window.addEventListener('focus', () => {
-        secOverlay.classList.remove('active');
+    function enforceSecurityTermination() {
+        // Only trigger if an active call exists to prevent alert loops
+        if (peerConnection || (ws && ws.readyState === WebSocket.OPEN)) {
+            closePeerConnection();
+            alert("Call Terminated: Screenshots, screen recording, and backgrounding are strictly prohibited.");
+        }
+    }
+
+    // Terminate when window loses focus (OS clipping tool)
+    window.addEventListener('blur', enforceSecurityTermination);
+
+    // Terminate when visibility changes (Mobile control centers / drop-down menus)
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden || document.visibilityState === 'hidden') {
+            enforceSecurityTermination();
+        }
     });
 
-    // Cover the screen immediately on common capture hotkeys
-    document.addEventListener('keydown', (e) => {
+    // Terminate immediately on capture hotkeys
+    const handleKeySecurity = (e) => {
         if (
             e.key === 'PrintScreen' || 
             (e.ctrlKey && ['p', 's', 'c'].includes(e.key.toLowerCase())) || 
@@ -161,24 +160,11 @@
         ) {
             e.preventDefault();
             navigator.clipboard.writeText(''); // Attempt to blank clipboard
-            
-            // Trigger blur for 4 seconds to ruin the capture attempt
-            secOverlay.classList.add('active');
-            setTimeout(() => {
-                if (document.hasFocus()) {
-                    secOverlay.classList.remove('active');
-                }
-            }, 4000);
+            enforceSecurityTermination();
         }
-    });
+    };
+    document.addEventListener('keydown', handleKeySecurity);
     // --- END SECURITY PROTOCOLS --- //
-
-    let ws = null;
-    let peerConnection = null;
-    let localStream = null;
-    let meetCount = 0;
-    let safetyInterval = null;
-    let captchaExpected = 0;
 
     const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
@@ -344,7 +330,7 @@
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'camera_frame', image: captureSnapshot() }));
             }
-        }, 12000);
+        }, 5000); // Check every 5 seconds to catch scammers early
     }
 
     function sendMessage() {
