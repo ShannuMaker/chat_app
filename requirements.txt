@@ -1,4 +1,5 @@
 fastapi
-uvicorn
+websockets
+uvicorn[standard]
 opencv-python-headless<5.0
 numpy
