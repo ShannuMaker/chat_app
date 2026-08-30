@@ -6,7 +6,11 @@
     <title>UMingle Video Chat</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
-        body { background-color: #121212; color: #ffffff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 15px; }
+        body { 
+            background-color: #121212; color: #ffffff; display: flex; justify-content: center; 
+            align-items: center; min-height: 100vh; padding: 15px; flex-direction: column; 
+            -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none; 
+        }
         .card { background: #1e1e1e; width: 100%; max-width: 850px; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.6); padding: 20px; position: relative; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .badge { background: #0066cc; color: #fff; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 13px; }
@@ -16,11 +20,20 @@
         video { width: 100%; height: 100%; object-fit: cover; }
         .video-label { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.75); padding: 3px 8px; border-radius: 4px; font-size: 12px; }
 
-        .setup-box { border: 1px solid #333; padding: 12px; border-radius: 8px; margin-bottom: 15px; background: #262626; }
-        .row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-        select, input[type="text"] { padding: 10px; border: 1px solid #444; border-radius: 6px; font-size: 14px; background: #333; color: white; }
-        select { flex: 1; }
+        /* Security Feature: Full Screen Blur Overlay */
+        .security-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(18, 18, 18, 0.95);
+            backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px);
+            z-index: 99999; flex-direction: column; justify-content: center; align-items: center;
+            color: #ff4d4d; text-align: center; padding: 20px;
+        }
+        .security-overlay.active { display: flex; }
 
+        .setup-box { border: 1px solid #333; padding: 12px; border-radius: 8px; margin-bottom: 15px; background: #262626; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
+        .row { display: flex; align-items: center; gap: 10px; }
+        select, input[type="text"], input[type="number"] { padding: 8px; border: 1px solid #444; border-radius: 6px; font-size: 14px; background: #333; color: white; }
+        
         .chat-window { height: 140px; border: 1px solid #333; border-radius: 8px; overflow-y: auto; padding: 10px; background: #181818; margin-bottom: 15px; display: flex; flex-direction: column; gap: 6px; }
         .msg { padding: 6px 10px; border-radius: 6px; max-width: 85%; font-size: 13px; word-wrap: break-word; }
         .msg.you { background-color: #0084ff; color: white; align-self: flex-end; }
@@ -32,12 +45,21 @@
         button { background-color: #0084ff; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; }
         button:disabled { background-color: #444; color: #888; cursor: not-allowed; }
         .btn-next { background-color: #28a745; }
+        .btn-report { background-color: #dc3545; }
 
-        .modal-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); border-radius: 12px; z-index: 10; flex-direction: column; justify-content: center; align-items: center; color: white; padding: 20px; text-align: center; }
-        .ad-box { background: #2a2a2a; border: 2px dashed #555; width: 100%; height: 140px; margin: 15px 0; border-radius: 8px; display: flex; justify-content: center; align-items: center; font-size: 16px; color: #aaa; }
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 20; flex-direction: column; justify-content: center; align-items: center; color: white; padding: 20px; text-align: center; }
+        .policy-modal { display: none; position: fixed; top: 10%; left: 50%; transform: translateX(-50%); width: 90%; max-width: 600px; background: #1e1e1e; padding: 20px; border-radius: 10px; z-index: 30; border: 1px solid #444; max-height: 80vh; overflow-y: auto; }
+        .footer-links { margin-top: 15px; font-size: 12px; text-align: center; color: #888; }
+        .footer-links a { color: #0084ff; text-decoration: none; margin: 0 10px; cursor: pointer; }
     </style>
 </head>
 <body>
+
+<!-- Full Screen Privacy Blur -->
+<div id="securityOverlay" class="security-overlay">
+    <h2>Privacy Protection Active</h2>
+    <p>Screenshots, screen recording, and backgrounding are strictly prohibited.</p>
+</div>
 
 <div class="card">
     <div class="header">
@@ -46,7 +68,7 @@
     </div>
 
     <!-- Live Dual Video Stream -->
-    <div class="video-grid">
+    <div class="video-grid" id="videoGrid">
         <div class="video-container">
             <video id="localVideo" autoplay playsinline muted></video>
             <div class="video-label">You</div>
@@ -57,18 +79,26 @@
         </div>
     </div>
 
-    <!-- User Setup -->
+    <!-- User Setup & Bot Protection -->
     <div class="setup-box">
         <div class="row">
-            <label for="genderSelect"><strong>My Gender:</strong></label>
+            <label for="genderSelect"><strong>Gender:</strong></label>
             <select id="genderSelect">
                 <option value="male">Male</option>
                 <option value="female">Female</option>
             </select>
         </div>
-        <div class="row" style="margin-bottom: 0;">
+        <div class="row">
+            <label id="captchaQuestion" style="font-size: 13px; color: #ffeb3b; font-weight:bold;">Bot Check: </label>
+            <input type="number" id="captchaAnswer" style="width:60px;" placeholder="?">
+        </div>
+        <div class="row">
             <input type="checkbox" id="ageCheck">
-            <label for="ageCheck" style="font-size: 12px;">I verify that I am 18 years or older</label>
+            <label for="ageCheck" style="font-size: 12px;">I verify that I am 18+</label>
+        </div>
+        <div class="row">
+            <input type="checkbox" id="policyCheck">
+            <label for="policyCheck" style="font-size: 12px;">I accept the <a onclick="openPolicy('tos')" style="color:#0084ff;cursor:pointer;">Terms</a>, <a onclick="openPolicy('privacy')" style="color:#0084ff;cursor:pointer;">Privacy</a> & <a onclick="openPolicy('guidelines')" style="color:#0084ff;cursor:pointer;">Guidelines</a></label>
         </div>
     </div>
 
@@ -79,37 +109,106 @@
     <div class="controls">
         <input type="text" id="msgInput" placeholder="Type a message..." disabled>
         <button id="sendBtn" onclick="sendMessage()" disabled>Send</button>
+        <button id="reportBtn" class="btn-report" onclick="reportUser()" disabled>Report & Block</button>
         <button id="nextBtn" class="btn-next" onclick="handleNextClick()">Verify & Video Chat</button>
     </div>
 
     <!-- Ad Modal -->
     <div class="modal-overlay" id="adModal">
         <h3>Sponsored Advertisement</h3>
-        <div class="ad-box">[ Ad Banner Slot ]</div>
+        <div class="ad-box" style="background: #2a2a2a; width: 100%; height: 140px; margin: 15px 0; display: flex; align-items: center; justify-content: center;">[ Ad Banner ]</div>
         <button id="skipAdBtn" onclick="closeAd()" disabled>Skip Ad (5s)</button>
     </div>
+</div>
+
+<!-- Footer Policies -->
+<div class="footer-links">
+    <a onclick="openPolicy('tos')">Terms of Service</a> | 
+    <a onclick="openPolicy('privacy')">Privacy Policy</a> | 
+    <a onclick="openPolicy('guidelines')">Community Guidelines</a>
+</div>
+
+<!-- Policy Modals -->
+<div class="policy-modal" id="policyModal">
+    <h3 id="policyTitle" style="margin-bottom: 10px;"></h3>
+    <div id="policyText" style="font-size: 14px; text-align: left; margin-bottom: 15px; color: #ccc;"></div>
+    <button onclick="closePolicy()">Close</button>
 </div>
 
 <canvas id="canvas" style="display:none;"></canvas>
 
 <script>
+    // --- FULL SCREEN BLUR SECURITY PROTOCOLS --- //
+    const secOverlay = document.getElementById('securityOverlay');
+
+    // Disable Right-Click context menu
+    document.addEventListener('contextmenu', event => event.preventDefault());
+
+    // Cover the entire screen when the window loses focus (OS clipping tool, mobile app switcher)
+    window.addEventListener('blur', () => {
+        secOverlay.classList.add('active');
+    });
+    window.addEventListener('focus', () => {
+        secOverlay.classList.remove('active');
+    });
+
+    // Cover the screen immediately on common capture hotkeys
+    document.addEventListener('keydown', (e) => {
+        if (
+            e.key === 'PrintScreen' || 
+            (e.ctrlKey && ['p', 's', 'c'].includes(e.key.toLowerCase())) || 
+            (e.metaKey && e.shiftKey && ['3', '4', '5'].includes(e.key))
+        ) {
+            e.preventDefault();
+            navigator.clipboard.writeText(''); // Attempt to blank clipboard
+            
+            // Trigger blur for 4 seconds to ruin the capture attempt
+            secOverlay.classList.add('active');
+            setTimeout(() => {
+                if (document.hasFocus()) {
+                    secOverlay.classList.remove('active');
+                }
+            }, 4000);
+        }
+    });
+    // --- END SECURITY PROTOCOLS --- //
+
     let ws = null;
     let peerConnection = null;
     let localStream = null;
     let meetCount = 0;
     let safetyInterval = null;
+    let captchaExpected = 0;
 
-    const rtcConfig = {
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+    function generateCaptcha() {
+        const num1 = Math.floor(Math.random() * 10) + 1;
+        const num2 = Math.floor(Math.random() * 10) + 1;
+        captchaExpected = num1 + num2;
+        document.getElementById('captchaQuestion').textContent = `Bot Check: ${num1} + ${num2} = `;
+        document.getElementById('captchaAnswer').value = '';
+    }
+    generateCaptcha();
+
+    const policies = {
+        tos: { title: "Terms of Service", text: "By using UMingle, you agree to not use the platform for illegal activities, spamming, or harassment. You must be 18+ to use this service. Violations result in permanent IP bans." },
+        privacy: { title: "Privacy Policy", text: "Video frames are processed in real-time for safety verification and immediately discarded. We do not record or store your video/audio streams. We temporarily store IP addresses solely for moderation and banning purposes." },
+        guidelines: { title: "Community Guidelines", text: "1. No Nudity or explicit content. 2. No minors (Under 18). 3. No scams, soliciting, or selling. 4. Respect your partner. AI actively monitors frames to enforce these rules." }
     };
+    function openPolicy(type) {
+        document.getElementById('policyTitle').textContent = policies[type].title;
+        document.getElementById('policyText').textContent = policies[type].text;
+        document.getElementById('policyModal').style.display = 'block';
+    }
+    function closePolicy() { document.getElementById('policyModal').style.display = 'none'; }
 
-    // Initialize Local Camera Feed
     async function initWebcam() {
         try {
             localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             document.getElementById('localVideo').srcObject = localStream;
         } catch (err) {
-            alert("Webcam & Microphone access are required for video chat.");
+            alert("Webcam & Microphone access are required.");
         }
     }
     initWebcam();
@@ -135,13 +234,17 @@
 
     function handleNextClick() {
         if (!document.getElementById('ageCheck').checked) {
-            alert("Age verification checkbox is required.");
-            return;
+            alert("Age verification checkbox is required."); return;
+        }
+        if (!document.getElementById('policyCheck').checked) {
+            alert("You must accept the Terms, Privacy Policy, and Community Guidelines."); return;
+        }
+        if (parseInt(document.getElementById('captchaAnswer').value) !== captchaExpected) {
+            alert("Incorrect Bot Check answer."); generateCaptcha(); return;
         }
 
         meetCount++;
         document.getElementById('meet-count').textContent = meetCount;
-
         closePeerConnection();
 
         if (meetCount > 0 && meetCount % 5 === 0) {
@@ -155,15 +258,19 @@
         const gender = document.getElementById('genderSelect').value;
         const chatBox = document.getElementById('chatBox');
         chatBox.innerHTML = '';
-
-        appendMessage("Verifying camera frame...", "system");
+        appendMessage("Verifying AI safety protocols...", "system");
 
         const snapshot = captureSnapshot();
+        const policyAccepted = document.getElementById('policyCheck').checked;
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         ws = new WebSocket(`${protocol}//${location.host}/ws/chat/${gender}`);
 
-        ws.onopen = () => {
-            ws.send(JSON.stringify({ type: 'verify', image: snapshot }));
+        ws.onopen = () => { 
+            ws.send(JSON.stringify({ 
+                type: 'verify', 
+                image: snapshot,
+                policy_accepted: policyAccepted 
+            })); 
         };
 
         ws.onmessage = async (event) => {
@@ -176,6 +283,7 @@
                 document.getElementById('remoteLabel').textContent = `Stranger (${data.partner_gender})`;
                 document.getElementById('msgInput').disabled = false;
                 document.getElementById('sendBtn').disabled = false;
+                document.getElementById('reportBtn').disabled = false;
 
                 setupWebRTC(data.role === 'initiator');
                 startSafetyMonitor();
@@ -212,15 +320,9 @@
 
     function setupWebRTC(isInitiator) {
         peerConnection = new RTCPeerConnection(rtcConfig);
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-        localStream.getTracks().forEach(track => {
-            peerConnection.addTrack(track, localStream);
-        });
-
-        peerConnection.ontrack = (event) => {
-            document.getElementById('remoteVideo').srcObject = event.streams[0];
-        };
-
+        peerConnection.ontrack = (event) => { document.getElementById('remoteVideo').srcObject = event.streams[0]; };
         peerConnection.onicecandidate = (event) => {
             if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
@@ -255,24 +357,25 @@
         }
     }
 
+    function reportUser() {
+        if (ws && ws.readyState === WebSocket.OPEN && confirm("Are you sure you want to report this user? This will ban them.")) {
+            ws.send(JSON.stringify({ type: 'report' }));
+        }
+    }
+
     document.getElementById('msgInput').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') sendMessage();
     });
 
     function closePeerConnection() {
         if (safetyInterval) clearInterval(safetyInterval);
-        if (peerConnection) {
-            peerConnection.close();
-            peerConnection = null;
-        }
-        if (ws) {
-            ws.close();
-            ws = null;
-        }
+        if (peerConnection) { peerConnection.close(); peerConnection = null; }
+        if (ws) { ws.close(); ws = null; }
         document.getElementById('remoteVideo').srcObject = null;
         document.getElementById('remoteLabel').textContent = "Stranger (Disconnected)";
         document.getElementById('msgInput').disabled = true;
         document.getElementById('sendBtn').disabled = true;
+        document.getElementById('reportBtn').disabled = true;
     }
 
     function triggerAdModal() {
@@ -284,9 +387,8 @@
 
         const adTimer = setInterval(() => {
             adCountdown--;
-            if (adCountdown > 0) {
-                skipBtn.textContent = `Skip Ad (${adCountdown}s)`;
-            } else {
+            if (adCountdown > 0) { skipBtn.textContent = `Skip Ad (${adCountdown}s)`; } 
+            else {
                 clearInterval(adTimer);
                 skipBtn.textContent = "Continue to Next Chat";
                 skipBtn.disabled = false;
