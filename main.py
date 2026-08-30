@@ -5,7 +5,7 @@ import urllib.request
 import numpy as np
 import cv2
 from typing import Dict, List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response
 from fastapi.responses import HTMLResponse
 
 app = FastAPI()
@@ -128,6 +128,14 @@ async def serve_frontend():
         with open("index.html", "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     return HTMLResponse(content="<h1>Error: index.html not found!</h1>", status_code=404)
+
+@app.head("/")
+async def health_check():
+    return Response(status_code=200)
+
+@app.get("/favicon.ico")
+async def favicon():
+    return Response(status_code=204)
 
 @app.websocket("/ws/chat/{gender}")
 async def websocket_chat(websocket: WebSocket, gender: str):
